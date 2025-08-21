@@ -2750,6 +2750,37 @@ void Player::GiveXP(uint32 xp, Creature* victim, float groupRate)
     else
         bonus_xp = victim ? GetXPRestBonus(xp) : 0;
 
+	// Victims higher level than the player give a custom bonus XP on top of what the base game does (which was very little)
+    if ( victim )
+    {
+		float flToughXPBonusPerLevelDiff = sWorld.getConfig( CONFIG_FLOAT_TOUGH_ENEMY_BONUS_XP_PER_LEVEL_DIFF );
+		float flToughXPCap = sWorld.getConfig( CONFIG_FLOAT_TOUGH_ENEMY_BONUS_XP_CAP );
+
+		int nLevelDiff = int( victim->GetLevel() ) - int ( GetLevel() );
+		if ( nLevelDiff > 0 )
+		{
+			float flBonusMult = 1.0f + flToughXPBonusPerLevelDiff * nLevelDiff;
+			if ( flBonusMult > flToughXPCap)
+			{
+				flBonusMult = flToughXPCap;
+			}
+
+			xp = uint32( float( xp ) * flBonusMult );
+		}
+    }
+
+	/*
+	// Debug logging
+	std::string vname = victim ? std::string(victim->GetName()) : "<null>";
+
+	int diff = victim ? int(victim->GetLevel()) - int(GetLevel()) : 0;
+	float rate = sWorld.getConfig(CONFIG_FLOAT_TOUGH_ENEMY_BONUS_XP_PER_LEVEL_DIFF);
+	float cap  = sWorld.getConfig(CONFIG_FLOAT_TOUGH_ENEMY_BONUS_XP_CAP);
+
+	sLog.outBasic("GiveXP bonus dbg: victim=%s diff=%d rate=%.3f cap=%.3f xp=%u",
+				  vname.c_str(), diff, rate, cap, (unsigned)xp);
+	*/
+
     SendLogXPGain(xp, victim, bonus_xp, recruitAFriend, groupRate);
 
     uint32 curXP = GetUInt32Value(PLAYER_XP);

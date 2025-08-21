@@ -481,6 +481,10 @@ void World::LoadConfigSettings(bool reload)
     setConfig(CONFIG_UINT32_CREATURE_LINKING_AGGRO_DELAY,             "CreatureLinkingAggroDelay",     2000);
     setConfigPos(CONFIG_FLOAT_CREATURE_FAMILY_FLEE_ASSISTANCE_RADIUS, "CreatureFamilyFleeAssistanceRadius", 30.0f);
 
+	// Custom added by gracks
+    setConfigPos(CONFIG_FLOAT_TOUGH_ENEMY_BONUS_XP_PER_LEVEL_DIFF, "XP.ToughEnemyBonusPerLevelDiff", 0.3f);
+    setConfigPos(CONFIG_FLOAT_TOUGH_ENEMY_BONUS_XP_CAP, "XP.ToughEnemyBonusCap", 2.0f);
+
     ///- Read other configuration items from the config file
     setConfigMinMax(CONFIG_UINT32_COMPRESSION, "Compression", 1, 1, 9);
     setConfig(CONFIG_BOOL_ADDON_CHANNEL, "AddonChannel", true);
@@ -1578,8 +1582,11 @@ void World::Update(uint32 diff)
 
     if (m_currentDiffSumIndex && m_currentDiffSumIndex % 60 == 0)
     {
-        sLog.outBasic("Avg Diff: %u. Sessions online: %u.", m_averageDiff, (uint32)GetActiveSessionCount());
-        sLog.outBasic("Max Diff: %u.", m_maxDiff);
+        if ( sPlayerbotAIConfig.perfMonEnabled )
+        {
+            //sLog.outBasic("Avg Diff: %u. Sessions online: %u.", m_averageDiff, (uint32)GetActiveSessionCount());
+            //sLog.outBasic("Max Diff: %u.", m_maxDiff);
+        }
     }
 
     if (m_currentDiffSum % 3000 == 0)

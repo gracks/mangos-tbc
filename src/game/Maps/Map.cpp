@@ -47,6 +47,7 @@
 
 #ifdef ENABLE_PLAYERBOTS
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotAIConfig.h"
 #endif
 
 #include <time.h>
@@ -890,8 +891,11 @@ void Map::Update(const uint32& t_diff)
     // Log the active zones and characters
     if (IsContinent() && HasRealPlayers() && HasActiveZones() && m_activeZonesTimer == 0U)
     {
-        sLog.outBasic("Map %u: Active Zones - %u", GetId(), m_activeZones.size());
-        sLog.outBasic("Map %u: Active Zone Players - %u of %u", GetId(), activePlayers, m_mapRefManager.getSize());
+        if ( sPlayerbotAIConfig.perfMonEnabled )
+        {
+            sLog.outBasic("Map %u: Active Zones - %u", GetId(), m_activeZones.size());
+            sLog.outBasic("Map %u: Active Zone Players - %u of %u", GetId(), activePlayers, m_mapRefManager.getSize());
+        }
     }
 #endif
 

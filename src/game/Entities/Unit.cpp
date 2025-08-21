@@ -59,6 +59,7 @@
 #include <math.h>
 #include <limits>
 #include <array>
+#include <algorithm>
 
 float baseMoveSpeed[MAX_MOVE_TYPE] =
 {
@@ -3386,11 +3387,12 @@ float Unit::CalculateEffectiveDodgeChance(const Unit* attacker, WeaponAttackType
     const bool isPlayerOrPet = HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
     const uint32 skill = (weapon ? attacker->GetWeaponSkillValue(attType, this) : attacker->GetSkillMaxForLevel(this));
     int32 difference = int32(GetDefenseSkillValue(attacker) - skill);
+    difference = std::clamp<int32>(difference, -15, 15);
     // Defense/weapon skill factor: for players and NPCs
     float factor = 0.04f;
     // NPCs gain additional bonus dodge chance based on positive skill difference
     if (!isPlayerOrPet && difference > 0)
-        factor = 0.1f;
+        factor = 0.06f; // default: 0.1f
     chance += (difference * factor);
     // Attacker's SPELL_AURA_MOD_COMBAT_RESULT_CHANCE contribution (or reduction)
     chance += attacker->GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_COMBAT_RESULT_CHANCE, VICTIMSTATE_DODGE);
@@ -3418,13 +3420,14 @@ float Unit::CalculateEffectiveParryChance(const Unit* attacker, WeaponAttackType
     const bool isPlayerOrPet = HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
     const uint32 skill = (weapon ? attacker->GetWeaponSkillValue(attType, this) : attacker->GetSkillMaxForLevel(this));
     int32 difference = int32(GetDefenseSkillValue(attacker) - skill);
+    difference = std::clamp<int32>(difference, -15, 15);
     // Defense/weapon skill factor: for players and NPCs
     float factor = 0.04f;
     // NPCs gain additional bonus parry chance based on positive skill difference (same value as bonus miss rate)
     if (!isPlayerOrPet && difference > 0)
     {
         if (difference > 10)
-            factor = 0.6f; // Pre-WotLK: 0.2 additional factor for each level above 2
+            factor = 0.1f; // Now same regardless of difference // Pre-WotLK: 0.2 additional factor for each level above 2
         else
             factor = 0.1f;
     }
@@ -3450,9 +3453,10 @@ float Unit::CalculateEffectiveBlockChance(const Unit* attacker, WeaponAttackType
     // b) Attacker has +skill bonuses
     const bool isPlayerOrPet = HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
     const uint32 skill = (weapon ? attacker->GetWeaponSkillValue(attType, this) : attacker->GetSkillMaxForLevel(this));
-    const int32 difference = int32(GetDefenseSkillValue(attacker) - skill);
+    int32 difference = int32(GetDefenseSkillValue(attacker) - skill);
+    difference = std::clamp<int32>(difference, -15, 15);
     // Defense/weapon skill factor: for players and NPCs
-    float factor = 0.04f;
+    float factor = 0.03f;
     // NPCs cannot gain bonus block chance based on positive skill difference
     if (!isPlayerOrPet && difference > 0)
         factor = 0.0f;
@@ -3467,12 +3471,14 @@ float Unit::CalculateEffectiveCrushChance(const Unit* victim, WeaponAttackType a
     float chance = 0.0f;
 
     // Crushing blow chance is present when attacker's weapon skill is >= 15 over victim's own capped defense skill
-    // The chance starts at 15% and increased by 2% per each additional skill point of defense deficit
     const uint32 cap = victim->GetSkillMaxForLevel();
     const uint32 defense = std::min(victim->GetDefenseSkillValue(this), cap);
     const int32 deficit = (int32(GetWeaponSkillValue(attType, victim)) - int32(defense));
-    if (deficit >= 15)
-        chance += ((2 * deficit) - 15);
+    int skillGapThreshold = 15;
+    int skillsPerLevel = 5;
+    float factor = 1.0f;
+    if (deficit >= skillGapThreshold)
+        chance += ((deficit * factor) - ((skillGapThreshold - skillsPerLevel) * factor));
     return std::max(0.0f, std::min(chance, 100.0f));
 }
 
@@ -3480,17 +3486,21 @@ float Unit::CalculateEffectiveGlanceChance(const Unit* victim, WeaponAttackType 
 {
     float chance = 0.0f;
 
-    // Glancing blow chance starts at 1% when victim's defense skill is > 10 lower than attacker's own capped weapon skill
-    // The chance is increased for each point of skill diffrernce
+    // Glancing blow chance is based on victim's defense skill being lower than attacker's own capped weapon skill
+    // The chance is increased for each point of skill difference
     const uint32 cap = GetSkillMaxForLevel();
     const uint32 skill = std::min(GetWeaponSkillValue(attType, victim), cap);
     const int32 level = int32(GetLevelForTarget(victim));
     const uint32 defense = victim->GetDefenseSkillValue(this);
+    const int32 defenseAndSkillDelta = int32(defense) - int32(skill); // can be negative
+    float baseGlanceChance = 10.0f;
     // Penalty for caster classes lower than level 30 in TBC
     if (GetTypeId() == TYPEID_PLAYER && (getClassMask() & CLASSMASK_WAND_USERS) && level < 30)
-        chance += (level + int32(defense - skill));
-    else
-        chance += (10 + int32(defense - skill));
+    {
+        baseGlanceChance = level;
+    }
+    float deltaImpact = 0.5f;
+    chance += (baseGlanceChance + ( defenseAndSkillDelta * deltaImpact ));
     return std::max(0.0f, std::min(chance, 100.0f));
 }
 
@@ -3987,22 +3997,13 @@ float Unit::CalculateEffectiveMissChance(const Unit *victim, WeaponAttackType at
     const bool vsPlayerOrPet = victim->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
     const uint32 skill = (weapon ? GetWeaponSkillValue(attType, victim) : GetSkillMaxForLevel(victim));
     int32 difference = int32(victim->GetDefenseSkillValue(this) - skill);
+    difference = std::clamp<int32>(difference, -15, 15);
     // Defense/weapon skill factor: for players and NPCs
     float factor = 0.04f;
     // NPCs gain additional bonus to incoming hit chance reduction based on positive skill difference (same value as bonus parry rate)
     if (!vsPlayerOrPet && difference > 0)
     {
-        if (difference > 10)
-        {
-            // First 10 points of difference (2 levels): usual decrease
-            chance += (10 * 0.1f);
-            difference -= 10;
-            // Each additional point of difference:
-            factor = 0.4f;
-            chance += (difference * 0.2f); // Pre-WotLK: Additional 1% miss chance for each level (final @ 3% per level)
-        }
-        else
-            factor = 0.1f;
+        factor = 0.06f;
     }
     chance += (difference * factor);
     // Victim's auras affecting attacker's hit contribution:
@@ -4178,28 +4179,39 @@ float Unit::CalculateEffectiveMagicResistancePercent(const Unit* attacker, Spell
         }
     }
 
-    float percent = 0;
+    float percent = 0.0f;
 
     if (resistance >= 0) // Magic resistance calculation
     {
-        // Attacker's level based skill, penalize when calculating for low levels (< 20):
-        const float skill = std::max(attacker ? attacker->GetSkillMaxForLevel(this) : GetSkillMaxForLevel(), uint16(100));
-        // Convert resistance value to resistance percentage through comparision with skill
-        percent += (float(resistance) / skill) * 100;
+        const int32 attackerSkill = std::max<int32>(attacker ? attacker->GetSkillMaxForLevel(this) : GetSkillMaxForLevel(), 100);
+        const int32 victimSkill = std::max<int32>(GetSkillMaxForLevel(attacker), 100);
+
+        // Convert resistance value to resistance percentage through comparision with attacker's skill
+        percent += (float(resistance) / attackerSkill) * 100;
+
         // Pre-3.0: multiplied by 0.75
         percent *= 0.75f;
+
         // Bonus resistance percent by positive level difference when calculating damage hit for NPCs only
         if (!binary && GetTypeId() == TYPEID_UNIT && !HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
-            percent += (0.4f * std::max(int32(GetSkillMaxForLevel(attacker) - skill), 0));
+        {
+            int nSkillDiffCap = 15;
+            int32 diff = std::clamp<int32>(victimSkill - attackerSkill, 0, nSkillDiffCap); // clamp ≈ +3 levels
+            const float flResistSlope = 0.2f;
+            percent += diff * flResistSlope;
+        }
+
         // Magic resistance percentage cap (same as armor cap)
-        percent = std::min(percent, 75.0f);
+        const float flMagicResistCap = 75.0f;
+        percent = std::min(percent, flMagicResistCap);
     }
-    else                    // Magic vulnerability calculation
+    else // Magic vulnerability calculation
     {
         // Victim's level based skill, penalize when calculating for low levels (< 20):
-        const float skill = std::max(GetSkillMaxForLevel(attacker), uint16(100));
+        const int32 victimSkill = std::max<int32>(GetSkillMaxForLevel(attacker), 100);
+
         // Convert resistance value to vulnerability percentage through comparision with skill
-        percent += (float(resistance) / skill) * 100;
+        percent += (float(resistance) / victimSkill) * 100;
     }
     return percent;
 }
